@@ -91,7 +91,7 @@ python3 saml_testbench.py
 
 Windows:
 ```powershell
-python saml_testbench.py
+python3 saml_testbench.py
 ```
 
 On first run, dependencies install automatically, a SQLite database is created (`saml_testbench.db`) in the same folder as the script, and the browser opens to `http://localhost:5000/admin`.
@@ -122,7 +122,7 @@ Go to **Admin → IdP Config** and select the **Okta** or **Duo** tab (or click 
 
 ### What your IdP needs from you
 
-Register these SP values in your IdP's SAML application. Copy buttons are provided on the form.
+Register these SP values in your IdP's SAML application. Click the **⚡ Quick Setup** button in the top-right of the configuration header to open a reference panel with copy buttons for each value.
 
 | Field in IdP | Value |
 |---|---|
@@ -163,6 +163,8 @@ Go to **Admin → OIDC Config** and select a provider tab.
 | Redirect URI / Callback URL | `http://localhost:5000/oidc/callback` |
 | Application Type | Web application |
 | Grant Type | Authorization Code |
+
+Click the **⚡ Quick Setup** button in the configuration header to open a reference panel with copy buttons for the Redirect URI.
 
 ### What you need from your IdP
 

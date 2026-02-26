@@ -2397,6 +2397,15 @@ def admin_idp():
 </div>
 {forms_html}
 <script>
+// ── Quick Setup panel toggle ─────────────────────────────────────────────────
+function toggleQs(panelId){{
+  var panel = document.getElementById(panelId);
+  if(!panel) return;
+  var visible = panel.style.display !== 'none';
+  panel.style.display = visible ? 'none' : 'block';
+  // scroll panel into view when opening
+  if(!visible) panel.scrollIntoView({{behavior:'smooth', block:'nearest'}});
+}}
 // ── Quick Setup copy buttons ────────────────────────────────────────────────
 function qsCopy(elId, btn){{
   var el=document.getElementById(elId);
@@ -2714,68 +2723,6 @@ def _idp_form_html(name, cfg, active_idp, tab):
     <input type="hidden" name="idp_name" value="{{name}}">
     {{missing_banner}}
 
-    <!-- ── "Register these in your IdP" pinned top bar ── -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem;
-      background:rgba(0,229,255,.04);border:1.5px solid rgba(0,229,255,.22);
-      border-radius:10px;padding:.9rem 1.1rem">
-      <div>
-        <div style="font-size:.62rem;font-weight:700;text-transform:uppercase;
-          letter-spacing:.09em;color:var(--accent);margin-bottom:.5rem">
-          &#x1F4CB; Register these in {{lbl}}
-        </div>
-        <div style="display:flex;flex-direction:column;gap:.35rem">
-          <div class="qs-row">
-            <div class="qs-label" style="min-width:155px">ACS / SSO URL</div>
-            <div class="qs-val" id="top-acs-{{name}}">http://localhost:{{PORT}}/saml/acs</div>
-            <button type="button" class="btn btn-sm btn-outline qs-copy"
-              onclick="qsCopy('top-acs-{{name}}',this)" title="Copy">&#x2398;</button>
-          </div>
-          <div class="qs-row">
-            <div class="qs-label" style="min-width:155px">SP Entity ID / Audience</div>
-            <div class="qs-val" id="top-ent-{{name}}">http://localhost:{{PORT}}/saml/metadata</div>
-            <button type="button" class="btn btn-sm btn-outline qs-copy"
-              onclick="qsCopy('top-ent-{{name}}',this)" title="Copy">&#x2398;</button>
-          </div>
-          <div class="qs-row">
-            <div class="qs-label" style="min-width:155px">SLO URL <span class="muted">(opt)</span></div>
-            <div class="qs-val" id="top-slo-{{name}}">http://localhost:{{PORT}}/saml/slo</div>
-            <button type="button" class="btn btn-sm btn-outline qs-copy"
-              onclick="qsCopy('top-slo-{{name}}',this)" title="Copy">&#x2398;</button>
-          </div>
-        </div>
-      </div>
-      <div>
-        <div style="font-size:.62rem;font-weight:700;text-transform:uppercase;
-          letter-spacing:.09em;color:var(--muted);margin-bottom:.5rem">
-          &#x1F4E5; Required from {{lbl}}
-        </div>
-        <div style="display:flex;flex-direction:column;gap:.3rem;font-size:.75rem">
-          <div style="display:flex;align-items:center;gap:.55rem;padding:.3rem .5rem;
-            border-radius:6px;background:{{"rgba(34,197,94,.06)" if cfg.get("entity_id") else "rgba(239,68,68,.07)"}}">
-            <span style="font-size:.85rem">{{"&#x2713;" if cfg.get("entity_id") else "&#x25CB;"}}</span>
-            <span style="color:{{"var(--success)" if cfg.get("entity_id") else "var(--danger)"}}">IdP Entity ID / Issuer URL</span>
-            {{'<span class="pill p-ok" style="font-size:.6rem;margin-left:auto">Set</span>' if cfg.get("entity_id") else '<span class="pill p-err" style="font-size:.6rem;margin-left:auto">Missing</span>'}}
-          </div>
-          <div style="display:flex;align-items:center;gap:.55rem;padding:.3rem .5rem;
-            border-radius:6px;background:{{"rgba(34,197,94,.06)" if cfg.get("sso_url") else "rgba(239,68,68,.07)"}}">
-            <span style="font-size:.85rem">{{"&#x2713;" if cfg.get("sso_url") else "&#x25CB;"}}</span>
-            <span style="color:{{"var(--success)" if cfg.get("sso_url") else "var(--danger)"}}">SSO URL (HTTP-Redirect)</span>
-            {{'<span class="pill p-ok" style="font-size:.6rem;margin-left:auto">Set</span>' if cfg.get("sso_url") else '<span class="pill p-err" style="font-size:.6rem;margin-left:auto">Missing</span>'}}
-          </div>
-          <div style="display:flex;align-items:center;gap:.55rem;padding:.3rem .5rem;
-            border-radius:6px;background:{{"rgba(34,197,94,.06)" if cfg.get("x509_cert") else "rgba(239,68,68,.07)"}}">
-            <span style="font-size:.85rem">{{"&#x2713;" if cfg.get("x509_cert") else "&#x25CB;"}}</span>
-            <span style="color:{{"var(--success)" if cfg.get("x509_cert") else "var(--danger)"}}">X.509 Signing Certificate</span>
-            {{'<span class="pill p-ok" style="font-size:.6rem;margin-left:auto">Set</span>' if cfg.get("x509_cert") else '<span class="pill p-err" style="font-size:.6rem;margin-left:auto">Missing</span>'}}
-          </div>
-          <div style="display:flex;align-items:center;gap:.55rem;padding:.3rem .5rem;
-            border-radius:6px;background:rgba(245,158,11,.05);color:var(--muted)">
-            <span>&#x25CB;</span><span>SLO URL (optional)</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <div class="cfg-form-hd">
       <div class="cfg-form-hd-left">
         <span style="font-size:1.4rem">{icon}</span>
@@ -2801,17 +2748,23 @@ def _idp_form_html(name, cfg, active_idp, tab):
         <button type="submit" class="btn btn-sm btn-secondary" name="_action" value="clone" title="Duplicate this configuration">&#x2398; Clone</button>
         {delete_html_inline}
         <a href="/saml/metadata?idp={name}" target="_blank" class="btn btn-sm btn-outline" title="View SP metadata XML">&#x1F4C4; Metadata</a>
+        <button type="button" class="btn btn-sm btn-outline" onclick="toggleQs('qs-panel-{name}')"
+          title="Quick Setup Reference" id="qs-btn-{name}">&#x26A1; Quick Setup</button>
         <button type="submit" class="btn btn-primary">&#x1F4BE; Save Configuration</button>
       </div>
     </div>
 
-    <!-- Quick Setup reference card -->
-    <div class="card" style="margin-bottom:1rem;border-color:rgba(0,229,255,.25);background:rgba(0,229,255,.02)">
-      <div class="card-hd" style="border-color:rgba(0,229,255,.2)">
-        <span class="card-title" style="color:var(--accent)">&#x26A1; Quick Setup Reference</span>
-        <span class="pill p-info" style="font-size:.62rem">What goes where</span>
+    <!-- Quick Setup reference — collapsible panel -->
+    <div id="qs-panel-{name}" style="display:none;margin-bottom:1rem;
+      border:1.5px solid rgba(0,229,255,.25);border-radius:10px;
+      background:rgba(0,229,255,.02);overflow:hidden">
+      <div style="padding:.65rem 1.1rem;border-bottom:1px solid rgba(0,229,255,.15);
+        display:flex;align-items:center;justify-content:space-between">
+        <span style="font-family:var(--fm);font-size:.68rem;font-weight:700;
+          letter-spacing:.1em;text-transform:uppercase;color:var(--accent)">&#x26A1; Quick Setup Reference</span>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="toggleQs('qs-panel-{name}')">✕ Close</button>
       </div>
-      <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;padding:1.1rem">
         <!-- LEFT: register these in your IdP -->
         <div>
           <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
@@ -4704,60 +4657,6 @@ def _oidc_form_html(name, cfg, active_oidc, tab):
     <input type="hidden" name="oidc_name" value="{{name}}">
     {{oidc_missing_banner}}
 
-    <!-- ── "Register these in your IdP" pinned top bar ── -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem;
-      background:rgba(0,229,255,.04);border:1.5px solid rgba(0,229,255,.22);
-      border-radius:10px;padding:.9rem 1.1rem">
-      <div>
-        <div style="font-size:.62rem;font-weight:700;text-transform:uppercase;
-          letter-spacing:.09em;color:var(--accent);margin-bottom:.5rem">
-          &#x1F4CB; Register these in {{lbl}}
-        </div>
-        <div style="display:flex;flex-direction:column;gap:.35rem">
-          <div class="qs-row">
-            <div class="qs-label" style="min-width:160px">Redirect URI (Callback)</div>
-            <div class="qs-val" id="top-oidc-cb-{{name}}">http://localhost:{{PORT}}/oidc/callback</div>
-            <button type="button" class="btn btn-sm btn-outline qs-copy"
-              onclick="qsCopy('top-oidc-cb-{{name}}',this)" title="Copy">&#x2398;</button>
-          </div>
-          <div style="font-size:.7rem;color:var(--muted);margin-top:.1rem">
-            App type: <strong style="color:var(--text)">Web</strong> &nbsp;·&nbsp;
-            Grant: <strong style="color:var(--text)">Authorization Code</strong>
-          </div>
-        </div>
-      </div>
-      <div>
-        <div style="font-size:.62rem;font-weight:700;text-transform:uppercase;
-          letter-spacing:.09em;color:var(--muted);margin-bottom:.5rem">
-          &#x1F4E5; Required from {{lbl}}
-        </div>
-        <div style="display:flex;flex-direction:column;gap:.3rem;font-size:.75rem">
-          <div style="display:flex;align-items:center;gap:.55rem;padding:.3rem .5rem;
-            border-radius:6px;background:{{"rgba(34,197,94,.06)" if cfg.get("client_id") else "rgba(239,68,68,.07)"}}">
-            <span style="font-size:.85rem">{{"&#x2713;" if cfg.get("client_id") else "&#x25CB;"}}</span>
-            <span style="color:{{"var(--success)" if cfg.get("client_id") else "var(--danger)"}}">Client ID</span>
-            {{'<span class="pill p-ok" style="font-size:.6rem;margin-left:auto">Set</span>' if cfg.get("client_id") else '<span class="pill p-err" style="font-size:.6rem;margin-left:auto">Missing</span>'}}
-          </div>
-          <div style="display:flex;align-items:center;gap:.55rem;padding:.3rem .5rem;
-            border-radius:6px;background:{{"rgba(34,197,94,.06)" if cfg.get("client_secret") else "rgba(245,158,11,.07)"}}">
-            <span style="font-size:.85rem">{{"&#x2713;" if cfg.get("client_secret") else "&#x25CB;"}}</span>
-            <span style="color:{{"var(--success)" if cfg.get("client_secret") else "var(--warning)"}}">Client Secret</span>
-            {{'<span class="pill p-ok" style="font-size:.6rem;margin-left:auto">Set</span>' if cfg.get("client_secret") else '<span class="pill p-warn" style="font-size:.6rem;margin-left:auto">Optional</span>'}}
-          </div>
-          <div style="display:flex;align-items:center;gap:.55rem;padding:.3rem .5rem;
-            border-radius:6px;background:{{"rgba(34,197,94,.06)" if (cfg.get("authorization_endpoint") or cfg.get("discovery_url")) else "rgba(239,68,68,.07)"}}">
-            <span style="font-size:.85rem">{{"&#x2713;" if (cfg.get("authorization_endpoint") or cfg.get("discovery_url")) else "&#x25CB;"}}</span>
-            <span style="color:{{"var(--success)" if (cfg.get("authorization_endpoint") or cfg.get("discovery_url")) else "var(--danger)"}}">Discovery URL <em>or</em> Endpoints</span>
-            {{'<span class="pill p-ok" style="font-size:.6rem;margin-left:auto">Set</span>' if (cfg.get("authorization_endpoint") or cfg.get("discovery_url")) else '<span class="pill p-err" style="font-size:.6rem;margin-left:auto">Missing</span>'}}
-          </div>
-          <div style="display:flex;align-items:center;gap:.55rem;padding:.3rem .5rem;
-            border-radius:6px;background:rgba(245,158,11,.05);color:var(--muted)">
-            <span>&#x25CB;</span><span>Token Endpoint (auto from Discovery)</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <div class="cfg-form-hd">
       <div class="cfg-form-hd-left">
         <span style="font-size:1.4rem">{icon}</span>
@@ -4782,17 +4681,23 @@ def _oidc_form_html(name, cfg, active_oidc, tab):
          '<button type="submit" name="set_active" value="1" class="btn btn-sm btn-secondary">Set as Active</button>'}
         <button type="submit" name="_action" value="clone" class="btn btn-sm btn-secondary" title="Duplicate this configuration">&#x2398; Clone</button>
         {oidc_delete_inline}
+        <button type="button" class="btn btn-sm btn-outline" onclick="toggleQs('qs-oidc-panel-{name}')"
+          title="Quick Setup Reference">&#x26A1; Quick Setup</button>
         <button type="submit" class="btn btn-primary">&#x1F4BE; Save Configuration</button>
       </div>
     </div>
 
-    <!-- OIDC Quick Setup reference card -->
-    <div class="card" style="margin-bottom:1rem;border-color:rgba(0,229,255,.25);background:rgba(0,229,255,.02)">
-      <div class="card-hd" style="border-color:rgba(0,229,255,.2)">
-        <span class="card-title" style="color:var(--accent)">&#x26A1; Quick Setup Reference</span>
-        <span class="pill p-info" style="font-size:.62rem">What goes where</span>
+    <!-- OIDC Quick Setup reference — collapsible panel -->
+    <div id="qs-oidc-panel-{name}" style="display:none;margin-bottom:1rem;
+      border:1.5px solid rgba(0,229,255,.25);border-radius:10px;
+      background:rgba(0,229,255,.02);overflow:hidden">
+      <div style="padding:.65rem 1.1rem;border-bottom:1px solid rgba(0,229,255,.15);
+        display:flex;align-items:center;justify-content:space-between">
+        <span style="font-family:var(--fm);font-size:.68rem;font-weight:700;
+          letter-spacing:.1em;text-transform:uppercase;color:var(--accent)">&#x26A1; Quick Setup Reference</span>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="toggleQs('qs-oidc-panel-{name}')">✕ Close</button>
       </div>
-      <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;padding:1.1rem">
         <!-- LEFT: register in IdP -->
         <div>
           <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
