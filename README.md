@@ -8,6 +8,10 @@ A single-file Python tool for testing **SAML 2.0** and **OpenID Connect (OIDC)**
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
 ---
+<img width="1885" height="716" alt="image" src="https://github.com/user-attachments/assets/39f588a9-0b6f-4516-8e4e-88810b1c36f7" />
+<img width="1892" height="834" alt="image" src="https://github.com/user-attachments/assets/4b4fd0c6-cf01-47f7-80dd-f35024f406b0" />
+<img width="1891" height="901" alt="image" src="https://github.com/user-attachments/assets/c7d76d7a-e5bb-48e5-91ea-b85329b542c8" />
+<img width="1872" height="761" alt="image" src="https://github.com/user-attachments/assets/1253811f-2709-48d1-b249-1565fc34c0c7" />
 
 ## Contents
 
