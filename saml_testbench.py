@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 ╔══════════════════════════════════════════════════════╗
-║         SAML TestBench — Single-file Executable      ║
-║   Run: python saml_testbench.py                       ║
-║   Deps auto-install on first run                      ║
+║       SAML TestBench — Single-file Dev Tool           ║
+║  Run:  python saml_testbench.py                       ║
+║  Port: set PORT below, or Admin → Settings → Port     ║
 ╚══════════════════════════════════════════════════════╝
 """
 
@@ -11,19 +11,22 @@
 # PHASE 1 — STDLIB IMPORTS
 # ═══════════════════════════════════════════════════════════════
 import sys, os, json, sqlite3, hashlib, secrets, uuid, threading, platform, shutil
-import subprocess, importlib, tempfile, webbrowser, time, re, base64
+import subprocess, importlib, tempfile, webbrowser, time, re, base64, argparse
 from datetime import datetime, timezone
 from pathlib import Path
 from functools import wraps
 from collections import defaultdict
 
 # ═══════════════════════════════════════════════════════════════
-# PHASE 2 — APP PATHS  (everything lives next to this script)
+# PHASE 2 — APP PATHS  (frozen-safe: use exe dir when bundled)
 # ═══════════════════════════════════════════════════════════════
-APP_DIR  = Path(__file__).resolve().parent   # folder containing saml_testbench.py
+_FROZEN  = getattr(sys, 'frozen', False)
+APP_DIR  = Path(sys.executable).resolve().parent if _FROZEN else Path(__file__).resolve().parent
 DB_PATH  = APP_DIR / "saml_testbench.db"
 SAML_TMP = APP_DIR / ".saml_cache"
-PORT     = 5000
+# ─── Port (override here or via Admin → Settings → Port after first run) ────
+# ─── Port: change this number OR use Admin → Settings → Port ────────────────
+PORT     = 5000   # overridden at startup by the value saved in Admin → Settings
 SAML_TMP.mkdir(parents=True, exist_ok=True)
 
 # ═══════════════════════════════════════════════════════════════
@@ -76,7 +79,8 @@ def bootstrap():
             subprocess.run([sys.executable, "-m", "pip", "install", pkg, "-q", "--upgrade"], check=True)
 
 # ── Run dep check BEFORE importing Flask/saml ────────────────────────────────
-bootstrap()
+if not _FROZEN:
+    bootstrap()
 
 # ═══════════════════════════════════════════════════════════════
 # PHASE 4 — MAIN IMPORTS (safe now)
@@ -1608,6 +1612,26 @@ pre{font-family:var(--fm);font-size:.7rem;color:var(--muted);
 .cfg-form-hd-right{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap}
 
 /* FLOATING SAVE BUTTON */
+
+/* Quick Setup card */
+.qs-row{display:flex;align-items:center;gap:.5rem;background:var(--bg);
+  border:1px solid var(--border);border-radius:8px;padding:.45rem .7rem;flex-wrap:wrap}
+.qs-label{font-size:.68rem;color:var(--muted);flex:0 0 auto;min-width:155px}
+.qs-val{font-family:var(--fm);font-size:.68rem;color:var(--accent);word-break:break-all;flex:1}
+.qs-copy{flex-shrink:0;font-size:.72rem!important;padding:.2rem .5rem!important}
+.qs-need{display:flex;align-items:center;gap:.55rem;padding:.4rem .7rem;border-radius:8px;
+  border:1px solid transparent}
+.qs-ok{background:rgba(34,197,94,.06);border-color:rgba(34,197,94,.2)}
+.qs-miss{background:rgba(239,68,68,.05);border-color:rgba(239,68,68,.15)}
+.qs-opt{background:rgba(0,229,255,.03);border-color:rgba(0,229,255,.1)}
+.qs-dot{font-size:.85rem;min-width:1rem;text-align:center}
+.qs-ok .qs-dot{color:var(--success)}
+.qs-miss .qs-dot{color:rgba(239,68,68,.5)}
+.qs-field{font-size:.75rem;flex:1}
+.qs-pill{font-size:.6rem;padding:.15rem .45rem;border-radius:5px;
+  background:rgba(34,197,94,.15);color:var(--success);margin-left:auto}
+.qs-pill-miss{background:rgba(239,68,68,.12);color:var(--danger)}
+
 .float-save{
   position:fixed;bottom:1.5rem;right:1.75rem;z-index:200;
   display:none;
@@ -2003,6 +2027,17 @@ def admin_dashboard():
         sid      = g["session_id"].replace('"','')
         err_txt  = f'<div style="color:var(--danger);font-size:.68rem;margin-top:.25rem">{s["error"][:80]}</div>' if s.get("error") else ""
 
+        # Sort steps: step-number first (Step 1, Step 2…), then timestamp
+        def _step_sort_key(st):
+            sn = st.get("step", "") or ""
+            # Extract leading integer from "Step N" or "OIDC Step N" or "Local…"
+            m = re.search(r"(?:OIDC\s+)?Step\s+(\d+)", sn, re.IGNORECASE)
+            num = int(m.group(1)) if m else 999
+            # Logout/SLO/Admin events go last
+            if any(k in sn for k in ("Logout", "SLO", "Admin", "admin")):
+                num = 900
+            return (num, st.get("ts", ""))
+        g["steps"].sort(key=_step_sort_key)
         steps_html = ""
         for st in g["steps"]:
             if st.get("level") == "debug":
@@ -2362,6 +2397,24 @@ def admin_idp():
 </div>
 {forms_html}
 <script>
+// ── Quick Setup copy buttons ────────────────────────────────────────────────
+function qsCopy(elId, btn){{
+  var el=document.getElementById(elId);
+  if(!el) return;
+  var text=el.textContent||el.innerText;
+  navigator.clipboard.writeText(text).then(function(){{
+    var orig=btn.innerHTML; btn.innerHTML='&#x2713;';
+    setTimeout(function(){{btn.innerHTML=orig;}},1200);
+  }}).catch(function(){{
+    var ta=document.createElement('textarea');
+    ta.value=text; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta);
+    var orig=btn.innerHTML; btn.innerHTML='&#x2713;';
+    setTimeout(function(){{btn.innerHTML=orig;}},1200);
+  }});
+}}
+
 // ── SAML Metadata XML parser ──────────────────────────────────────────────────
 function toggleXmlImport(name){{
   var body = document.getElementById('xml-import-body-'+name);
@@ -2658,8 +2711,70 @@ def _idp_form_html(name, cfg, active_idp, tab):
     return f"""
 <div id="tab-{name}" style="{display}">
   <form method="post" id="saml-form-{name}" onchange="markDirty('saml-form-{name}')">
-    <input type="hidden" name="idp_name" value="{name}">
-    {missing_banner}
+    <input type="hidden" name="idp_name" value="{{name}}">
+    {{missing_banner}}
+
+    <!-- ── "Register these in your IdP" pinned top bar ── -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem;
+      background:rgba(0,229,255,.04);border:1.5px solid rgba(0,229,255,.22);
+      border-radius:10px;padding:.9rem 1.1rem">
+      <div>
+        <div style="font-size:.62rem;font-weight:700;text-transform:uppercase;
+          letter-spacing:.09em;color:var(--accent);margin-bottom:.5rem">
+          &#x1F4CB; Register these in {{lbl}}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:.35rem">
+          <div class="qs-row">
+            <div class="qs-label" style="min-width:155px">ACS / SSO URL</div>
+            <div class="qs-val" id="top-acs-{{name}}">http://localhost:{{PORT}}/saml/acs</div>
+            <button type="button" class="btn btn-sm btn-outline qs-copy"
+              onclick="qsCopy('top-acs-{{name}}',this)" title="Copy">&#x2398;</button>
+          </div>
+          <div class="qs-row">
+            <div class="qs-label" style="min-width:155px">SP Entity ID / Audience</div>
+            <div class="qs-val" id="top-ent-{{name}}">http://localhost:{{PORT}}/saml/metadata</div>
+            <button type="button" class="btn btn-sm btn-outline qs-copy"
+              onclick="qsCopy('top-ent-{{name}}',this)" title="Copy">&#x2398;</button>
+          </div>
+          <div class="qs-row">
+            <div class="qs-label" style="min-width:155px">SLO URL <span class="muted">(opt)</span></div>
+            <div class="qs-val" id="top-slo-{{name}}">http://localhost:{{PORT}}/saml/slo</div>
+            <button type="button" class="btn btn-sm btn-outline qs-copy"
+              onclick="qsCopy('top-slo-{{name}}',this)" title="Copy">&#x2398;</button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:.62rem;font-weight:700;text-transform:uppercase;
+          letter-spacing:.09em;color:var(--muted);margin-bottom:.5rem">
+          &#x1F4E5; Required from {{lbl}}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:.3rem;font-size:.75rem">
+          <div style="display:flex;align-items:center;gap:.55rem;padding:.3rem .5rem;
+            border-radius:6px;background:{{"rgba(34,197,94,.06)" if cfg.get("entity_id") else "rgba(239,68,68,.07)"}}">
+            <span style="font-size:.85rem">{{"&#x2713;" if cfg.get("entity_id") else "&#x25CB;"}}</span>
+            <span style="color:{{"var(--success)" if cfg.get("entity_id") else "var(--danger)"}}">IdP Entity ID / Issuer URL</span>
+            {{'<span class="pill p-ok" style="font-size:.6rem;margin-left:auto">Set</span>' if cfg.get("entity_id") else '<span class="pill p-err" style="font-size:.6rem;margin-left:auto">Missing</span>'}}
+          </div>
+          <div style="display:flex;align-items:center;gap:.55rem;padding:.3rem .5rem;
+            border-radius:6px;background:{{"rgba(34,197,94,.06)" if cfg.get("sso_url") else "rgba(239,68,68,.07)"}}">
+            <span style="font-size:.85rem">{{"&#x2713;" if cfg.get("sso_url") else "&#x25CB;"}}</span>
+            <span style="color:{{"var(--success)" if cfg.get("sso_url") else "var(--danger)"}}">SSO URL (HTTP-Redirect)</span>
+            {{'<span class="pill p-ok" style="font-size:.6rem;margin-left:auto">Set</span>' if cfg.get("sso_url") else '<span class="pill p-err" style="font-size:.6rem;margin-left:auto">Missing</span>'}}
+          </div>
+          <div style="display:flex;align-items:center;gap:.55rem;padding:.3rem .5rem;
+            border-radius:6px;background:{{"rgba(34,197,94,.06)" if cfg.get("x509_cert") else "rgba(239,68,68,.07)"}}">
+            <span style="font-size:.85rem">{{"&#x2713;" if cfg.get("x509_cert") else "&#x25CB;"}}</span>
+            <span style="color:{{"var(--success)" if cfg.get("x509_cert") else "var(--danger)"}}">X.509 Signing Certificate</span>
+            {{'<span class="pill p-ok" style="font-size:.6rem;margin-left:auto">Set</span>' if cfg.get("x509_cert") else '<span class="pill p-err" style="font-size:.6rem;margin-left:auto">Missing</span>'}}
+          </div>
+          <div style="display:flex;align-items:center;gap:.55rem;padding:.3rem .5rem;
+            border-radius:6px;background:rgba(245,158,11,.05);color:var(--muted)">
+            <span>&#x25CB;</span><span>SLO URL (optional)</span>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div class="cfg-form-hd">
       <div class="cfg-form-hd-left">
@@ -2687,6 +2802,72 @@ def _idp_form_html(name, cfg, active_idp, tab):
         {delete_html_inline}
         <a href="/saml/metadata?idp={name}" target="_blank" class="btn btn-sm btn-outline" title="View SP metadata XML">&#x1F4C4; Metadata</a>
         <button type="submit" class="btn btn-primary">&#x1F4BE; Save Configuration</button>
+      </div>
+    </div>
+
+    <!-- Quick Setup reference card -->
+    <div class="card" style="margin-bottom:1rem;border-color:rgba(0,229,255,.25);background:rgba(0,229,255,.02)">
+      <div class="card-hd" style="border-color:rgba(0,229,255,.2)">
+        <span class="card-title" style="color:var(--accent)">&#x26A1; Quick Setup Reference</span>
+        <span class="pill p-info" style="font-size:.62rem">What goes where</span>
+      </div>
+      <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem">
+        <!-- LEFT: register these in your IdP -->
+        <div>
+          <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+            color:var(--muted);margin-bottom:.65rem">Register these in {lbl}</div>
+          <div style="display:flex;flex-direction:column;gap:.5rem">
+            <div class="qs-row">
+              <div class="qs-label">ACS URL (Single Sign-On URL)</div>
+              <div class="qs-val" id="qs-acs-{name}">http://localhost:{PORT}/saml/acs</div>
+              <button type="button" class="btn btn-sm btn-outline qs-copy"
+                onclick="qsCopy('qs-acs-{name}',this)" title="Copy">&#x2398;</button>
+            </div>
+            <div class="qs-row">
+              <div class="qs-label">SP Entity ID / Audience URI</div>
+              <div class="qs-val" id="qs-ent-{name}">http://localhost:{PORT}/saml/metadata</div>
+              <button type="button" class="btn btn-sm btn-outline qs-copy"
+                onclick="qsCopy('qs-ent-{name}',this)" title="Copy">&#x2398;</button>
+            </div>
+            <div class="qs-row">
+              <div class="qs-label">SLO URL (optional)</div>
+              <div class="qs-val" id="qs-slo-{name}">http://localhost:{PORT}/saml/slo</div>
+              <button type="button" class="btn btn-sm btn-outline qs-copy"
+                onclick="qsCopy('qs-slo-{name}',this)" title="Copy">&#x2398;</button>
+            </div>
+            <div class="qs-row">
+              <div class="qs-label">SP Metadata XML</div>
+              <a href="/saml/metadata?idp={name}" target="_blank"
+                class="btn btn-sm btn-outline" style="font-size:.7rem">&#x1F4C4; View / Download</a>
+            </div>
+          </div>
+        </div>
+        <!-- RIGHT: what you need from IdP -->
+        <div>
+          <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+            color:var(--muted);margin-bottom:.65rem">What you need from {lbl}</div>
+          <div style="display:flex;flex-direction:column;gap:.45rem">
+            <div class="qs-need {'qs-ok' if cfg.get('entity_id') else 'qs-miss'}">
+              <span class="qs-dot">{'&#x2713;' if cfg.get('entity_id') else '&#x25CB;'}</span>
+              <span class="qs-field">IdP Entity ID / Issuer URL</span>
+              {'<span class="qs-pill">Set</span>' if cfg.get('entity_id') else '<span class="qs-pill qs-pill-miss">Missing</span>'}
+            </div>
+            <div class="qs-need {'qs-ok' if cfg.get('sso_url') else 'qs-miss'}">
+              <span class="qs-dot">{'&#x2713;' if cfg.get('sso_url') else '&#x25CB;'}</span>
+              <span class="qs-field">SSO URL (HTTP-Redirect or POST)</span>
+              {'<span class="qs-pill">Set</span>' if cfg.get('sso_url') else '<span class="qs-pill qs-pill-miss">Missing</span>'}
+            </div>
+            <div class="qs-need {'qs-ok' if cfg.get('x509_cert') else 'qs-miss'}">
+              <span class="qs-dot">{'&#x2713;' if cfg.get('x509_cert') else '&#x25CB;'}</span>
+              <span class="qs-field">X.509 Signing Certificate</span>
+              {'<span class="qs-pill">Set</span>' if cfg.get('x509_cert') else '<span class="qs-pill qs-pill-miss">Missing</span>'}
+            </div>
+            <div class="qs-need qs-opt">
+              <span class="qs-dot" style="color:var(--muted)">&#x25CB;</span>
+              <span class="qs-field" style="color:var(--muted)">SLO URL <em>(optional)</em></span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -3255,6 +3436,17 @@ def admin_logs():
         else:
             g_protocol = "saml"
 
+        # Sort steps: step-number first (Step 1, Step 2…), then timestamp
+        def _step_sort_key(st):
+            sn = st.get("step", "") or ""
+            # Extract leading integer from "Step N" or "OIDC Step N" or "Local…"
+            m = re.search(r"(?:OIDC\s+)?Step\s+(\d+)", sn, re.IGNORECASE)
+            num = int(m.group(1)) if m else 999
+            # Logout/SLO/Admin events go last
+            if any(k in sn for k in ("Logout", "SLO", "Admin", "admin")):
+                num = 900
+            return (num, st.get("ts", ""))
+        g["steps"].sort(key=_step_sort_key)
         steps_html = ""
         for st in g["steps"]:
             st_ok = st.get("success")
@@ -3506,12 +3698,21 @@ def admin_settings():
     if request.method == "POST":
         set_setting("debug_enabled", "1" if request.form.get("debug_enabled") else "0")
         set_setting("active_idp",    request.form.get("active_idp","okta"))
-        flash("Settings saved.", "success")
+        new_port = request.form.get("port","").strip()
+        if new_port.isdigit() and 1024 <= int(new_port) <= 65535:
+            set_setting("port", new_port)
+            flash(f"Settings saved. Port changed to {new_port} — restart the server for it to take effect.", "success")
+        else:
+            if new_port:
+                flash("Settings saved (port ignored — must be 1024–65535).", "warning")
+            else:
+                flash("Settings saved.", "success")
         return redirect(url_for("admin_settings"))
 
-    dbg    = is_debug()
-    active = get_setting("active_idp","okta")
+    dbg      = is_debug()
+    active   = get_setting("active_idp","okta")
     all_idps = list_idps()
+    saved_port = get_setting("port", str(PORT))
 
     idp_options = "".join(
         f'<option value="{i["name"]}" {"selected" if i["name"]==active else ""}>{i.get("label") or i["name"].capitalize()}</option>'
@@ -3563,6 +3764,20 @@ def admin_settings():
           </div>
         </div>
       </div>
+      <div id="settings-port-card" class="card">
+        <div class="card-hd"><span class="card-title">Server Port</span>
+          <span class="pill p-gray" style="font-size:.62rem">Restart required</span>
+        </div>
+        <div class="card-body">
+          <div class="form-group" style="margin-bottom:.5rem">
+            <label>Listening Port <span class='muted'>(currently {PORT})</span></label>
+            <input type="number" name="port" value="{saved_port}" min="1024" max="65535"
+              style="width:120px">
+            <div class="form-hint">Change and restart to listen on a different port (e.g. 5001 for a second instance). You can also edit <code>PORT&nbsp;=&nbsp;5000</code> directly in the .py file.</div>
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <div>
@@ -3640,6 +3855,79 @@ def admin_settings():
   </div>
 </div>
 </div>
+
+<!-- Service Management -->
+<div id="settings-service-card" style="margin-top:1.75rem">
+<div class="card" style="border-color:rgba(0,229,255,.2)">
+  <div class="card-hd" style="background:rgba(0,229,255,.03)">
+    <span class="card-title" style="color:var(--accent)">&#x2699; Background Service</span>
+    <span id="svc-status-pill" class="pill p-gray" style="font-size:.62rem">Checking&#x2026;</span>
+  </div>
+  <div class="card-body">
+    <p style="font-size:.82rem;color:var(--muted);margin-bottom:1rem">
+      Install SAML TestBench as a background service so it starts automatically at boot
+      and runs without a terminal window.
+      <strong style="color:var(--text)">Windows</strong> uses Task Scheduler,
+      <strong style="color:var(--text)">Linux</strong> uses systemd,
+      <strong style="color:var(--text)">macOS</strong> uses LaunchAgent.
+      Root / Administrator privileges may be required.
+    </p>
+    <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.85rem">
+      <button class="btn btn-sm btn-secondary" onclick="svcAction('install')">&#x1F4CC; Install Service</button>
+      <button class="btn btn-sm btn-secondary" onclick="svcAction('uninstall')">&#x1F5D1; Uninstall Service</button>
+      <button class="btn btn-sm btn-secondary" onclick="svcAction('start')">&#x25B6; Start</button>
+      <button class="btn btn-sm btn-secondary" onclick="svcAction('stop')">&#x23F9; Stop</button>
+    </div>
+    <div id="svc-detail" style="font-family:var(--fm);font-size:.72rem;color:var(--muted);margin-bottom:.6rem"></div>
+    <div id="svc-result" style="font-size:.79rem;padding:.6rem .85rem;border-radius:8px;
+      display:none;white-space:pre-wrap;word-break:break-word;line-height:1.55"></div>
+  </div>
+</div>
+</div>
+<script>
+(function(){{
+  function _pill(installed, running){{
+    if(running)   return '<span class="pill p-ok"  style="font-size:.62rem">&#x25CF; Running</span>';
+    if(installed) return '<span class="pill p-warn" style="font-size:.62rem">&#x25CF; Installed (stopped)</span>';
+    return '<span class="pill p-gray" style="font-size:.62rem">&#x25CB; Not installed</span>';
+  }}
+  function _updateSvc(st){{
+    var pill = document.getElementById('svc-status-pill');
+    if(pill) {{ pill.outerHTML = _pill(st.installed, st.running)
+              .replace('<span class=', '<span id="svc-status-pill" class='); }}
+    var det = document.getElementById('svc-detail');
+    if(det) det.textContent = (st.detail||'') + (st.platform ? '  [' + st.platform + ']' : '');
+  }}
+  window.svcAction = function(action){{
+    var res = document.getElementById('svc-result');
+    res.style.display='none'; res.textContent='';
+    var btn = event.target; btn.disabled=true;
+    var orig = btn.textContent; btn.textContent='&#x2026;';
+    fetch('/admin/service/'+action, {{method:'POST'}})
+      .then(function(r){{return r.json();}})
+      .then(function(d){{
+        btn.disabled=false; btn.textContent=orig;
+        res.style.display='block';
+        if(d.ok){{
+          res.style.cssText='font-size:.79rem;padding:.6rem .85rem;border-radius:8px;display:block;white-space:pre-wrap;word-break:break-word;line-height:1.55;background:rgba(34,197,94,.07);border:1px solid rgba(34,197,94,.25);color:var(--success)';
+          res.textContent='\u2713 ' + (d.message||'Done.');
+        }} else {{
+          res.style.cssText='font-size:.79rem;padding:.6rem .85rem;border-radius:8px;display:block;white-space:pre-wrap;word-break:break-word;line-height:1.55;background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.25);color:var(--danger)';
+          res.textContent='\u2717 ' + (d.error||'Unknown error.');
+        }}
+        if(d.status) _updateSvc(d.status);
+      }}).catch(function(e){{
+        btn.disabled=false; btn.textContent=orig;
+        res.style.display='block';
+        res.textContent='Network error: '+e;
+      }});
+  }};
+  function svcLoad(){{
+    fetch('/admin/service/status').then(function(r){{return r.json();}}).then(_updateSvc).catch(function(){{}});
+  }}
+  document.addEventListener('DOMContentLoaded', svcLoad);
+}})();
+</script>
 
 <!-- Danger Zone -->
 <div id="settings-danger" style="margin-top:1.5rem">
@@ -3731,6 +4019,9 @@ function moveData(){{
       {"sel": "#settings-idp-card",
        "title": "Active Identity Provider",
        "body": "Choose which IdP is used by default for SAML flows. This is the IdP whose SSO button shows first on the login page and whose certificate is used at /saml/acs when no ?idp= parameter is present in the request."},
+      {"sel": "#settings-port-card",
+       "title": "Server Port",
+       "body": "Change the port SAML TestBench listens on — useful when running two instances simultaneously (e.g. port 5000 and 5001 for testing two IdPs side-by-side). Save and then restart the script for the change to take effect. You can also edit PORT&nbsp;=&nbsp;5000 directly at the top of the .py file before starting."},
       {"sel": "#settings-debug-card",
        "title": "Debug Logging",
        "body": "When enabled, every SAML step logs a full <em>debug</em> entry alongside the summary entry. Debug entries include the raw SAMLRequest/Response XML, every attribute in the assertion, the NameID and session index, and the signature algorithm. Disable this to keep the log database smaller in high-volume testing."},
@@ -3740,6 +4031,9 @@ function moveData(){{
       {"sel": "#settings-sp-card",
        "title": "SP Endpoint Reference",
        "body": "These three URLs are what you register inside your IdP's SAML application config. The ACS URL is where the IdP posts the SAMLResponse. The Entity ID identifies this SP to the IdP. Copy them exactly — a mismatch here is the most common cause of SAML errors."},
+      {"sel": "#settings-service-card",
+       "title": "Background Service",
+       "body": "Install SAML TestBench as a system service so it starts automatically at every boot without a terminal window. Windows uses Task Scheduler (no SCM driver needed), Linux uses systemd (falls back to a user-level service if you are not root), and macOS uses a LaunchAgent. Use Install to register the service, then Start/Stop to control it from here or with standard OS tools (schtasks, systemctl, launchctl). Uninstall removes only the registration — your database and config are not affected."},
       {"sel": "#settings-danger",
        "title": "Danger Zone",
        "body": "<strong>Clear SAML Cache</strong> removes the cached IdP settings files — they rebuild automatically on next use, picking up any certificate or URL changes you've saved. <strong>Factory Reset</strong> is nuclear: it permanently wipes all users, logs, IdP configs, and settings, then recreates the default admin/admin123 account. Type RESET to confirm."},
@@ -3857,8 +4151,8 @@ def admin_move_data():
     try:
         dest = Path(dest_str)
         dest.mkdir(parents=True, exist_ok=True)
-        # Copy script
-        script_src = Path(__file__).resolve()
+        # Copy script / exe (works both frozen and .py)
+        script_src = Path(sys.executable).resolve() if _FROZEN else Path(__file__).resolve()
         shutil.copy2(str(script_src), str(dest / script_src.name))
         # Copy database
         shutil.copy2(str(DB_PATH), str(dest / DB_PATH.name))
@@ -4407,8 +4701,62 @@ def _oidc_form_html(name, cfg, active_oidc, tab):
     return f"""
 <div id="otab-{name}" style="{display}">
   <form method="post" id="oidc-form-{name}" onchange="markOidcDirty('oidc-form-{name}')">
-    <input type="hidden" name="oidc_name" value="{name}">
-    {oidc_missing_banner}
+    <input type="hidden" name="oidc_name" value="{{name}}">
+    {{oidc_missing_banner}}
+
+    <!-- ── "Register these in your IdP" pinned top bar ── -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem;
+      background:rgba(0,229,255,.04);border:1.5px solid rgba(0,229,255,.22);
+      border-radius:10px;padding:.9rem 1.1rem">
+      <div>
+        <div style="font-size:.62rem;font-weight:700;text-transform:uppercase;
+          letter-spacing:.09em;color:var(--accent);margin-bottom:.5rem">
+          &#x1F4CB; Register these in {{lbl}}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:.35rem">
+          <div class="qs-row">
+            <div class="qs-label" style="min-width:160px">Redirect URI (Callback)</div>
+            <div class="qs-val" id="top-oidc-cb-{{name}}">http://localhost:{{PORT}}/oidc/callback</div>
+            <button type="button" class="btn btn-sm btn-outline qs-copy"
+              onclick="qsCopy('top-oidc-cb-{{name}}',this)" title="Copy">&#x2398;</button>
+          </div>
+          <div style="font-size:.7rem;color:var(--muted);margin-top:.1rem">
+            App type: <strong style="color:var(--text)">Web</strong> &nbsp;·&nbsp;
+            Grant: <strong style="color:var(--text)">Authorization Code</strong>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:.62rem;font-weight:700;text-transform:uppercase;
+          letter-spacing:.09em;color:var(--muted);margin-bottom:.5rem">
+          &#x1F4E5; Required from {{lbl}}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:.3rem;font-size:.75rem">
+          <div style="display:flex;align-items:center;gap:.55rem;padding:.3rem .5rem;
+            border-radius:6px;background:{{"rgba(34,197,94,.06)" if cfg.get("client_id") else "rgba(239,68,68,.07)"}}">
+            <span style="font-size:.85rem">{{"&#x2713;" if cfg.get("client_id") else "&#x25CB;"}}</span>
+            <span style="color:{{"var(--success)" if cfg.get("client_id") else "var(--danger)"}}">Client ID</span>
+            {{'<span class="pill p-ok" style="font-size:.6rem;margin-left:auto">Set</span>' if cfg.get("client_id") else '<span class="pill p-err" style="font-size:.6rem;margin-left:auto">Missing</span>'}}
+          </div>
+          <div style="display:flex;align-items:center;gap:.55rem;padding:.3rem .5rem;
+            border-radius:6px;background:{{"rgba(34,197,94,.06)" if cfg.get("client_secret") else "rgba(245,158,11,.07)"}}">
+            <span style="font-size:.85rem">{{"&#x2713;" if cfg.get("client_secret") else "&#x25CB;"}}</span>
+            <span style="color:{{"var(--success)" if cfg.get("client_secret") else "var(--warning)"}}">Client Secret</span>
+            {{'<span class="pill p-ok" style="font-size:.6rem;margin-left:auto">Set</span>' if cfg.get("client_secret") else '<span class="pill p-warn" style="font-size:.6rem;margin-left:auto">Optional</span>'}}
+          </div>
+          <div style="display:flex;align-items:center;gap:.55rem;padding:.3rem .5rem;
+            border-radius:6px;background:{{"rgba(34,197,94,.06)" if (cfg.get("authorization_endpoint") or cfg.get("discovery_url")) else "rgba(239,68,68,.07)"}}">
+            <span style="font-size:.85rem">{{"&#x2713;" if (cfg.get("authorization_endpoint") or cfg.get("discovery_url")) else "&#x25CB;"}}</span>
+            <span style="color:{{"var(--success)" if (cfg.get("authorization_endpoint") or cfg.get("discovery_url")) else "var(--danger)"}}">Discovery URL <em>or</em> Endpoints</span>
+            {{'<span class="pill p-ok" style="font-size:.6rem;margin-left:auto">Set</span>' if (cfg.get("authorization_endpoint") or cfg.get("discovery_url")) else '<span class="pill p-err" style="font-size:.6rem;margin-left:auto">Missing</span>'}}
+          </div>
+          <div style="display:flex;align-items:center;gap:.55rem;padding:.3rem .5rem;
+            border-radius:6px;background:rgba(245,158,11,.05);color:var(--muted)">
+            <span>&#x25CB;</span><span>Token Endpoint (auto from Discovery)</span>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div class="cfg-form-hd">
       <div class="cfg-form-hd-left">
@@ -4435,6 +4783,65 @@ def _oidc_form_html(name, cfg, active_oidc, tab):
         <button type="submit" name="_action" value="clone" class="btn btn-sm btn-secondary" title="Duplicate this configuration">&#x2398; Clone</button>
         {oidc_delete_inline}
         <button type="submit" class="btn btn-primary">&#x1F4BE; Save Configuration</button>
+      </div>
+    </div>
+
+    <!-- OIDC Quick Setup reference card -->
+    <div class="card" style="margin-bottom:1rem;border-color:rgba(0,229,255,.25);background:rgba(0,229,255,.02)">
+      <div class="card-hd" style="border-color:rgba(0,229,255,.2)">
+        <span class="card-title" style="color:var(--accent)">&#x26A1; Quick Setup Reference</span>
+        <span class="pill p-info" style="font-size:.62rem">What goes where</span>
+      </div>
+      <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem">
+        <!-- LEFT: register in IdP -->
+        <div>
+          <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+            color:var(--muted);margin-bottom:.65rem">Register these in {lbl}</div>
+          <div style="display:flex;flex-direction:column;gap:.5rem">
+            <div class="qs-row">
+              <div class="qs-label">Redirect URI (Callback URL)</div>
+              <div class="qs-val" id="qs-oidc-cb-{name}">http://localhost:{PORT}/oidc/callback</div>
+              <button type="button" class="btn btn-sm btn-outline qs-copy"
+                onclick="qsCopy('qs-oidc-cb-{name}',this)" title="Copy">&#x2398;</button>
+            </div>
+            <div class="qs-row">
+              <div class="qs-label">Sign-in Redirect URI <span class="muted">(Okta term)</span></div>
+              <div class="qs-val" id="qs-oidc-cb2-{name}">http://localhost:{PORT}/oidc/callback</div>
+              <button type="button" class="btn btn-sm btn-outline qs-copy"
+                onclick="qsCopy('qs-oidc-cb2-{name}',this)" title="Copy">&#x2398;</button>
+            </div>
+            <div style="font-size:.7rem;color:var(--muted);margin-top:.25rem">
+              App type: <strong style="color:var(--text)">Web application</strong> &nbsp;·&nbsp;
+              Grant type: <strong style="color:var(--text)">Authorization Code</strong>
+            </div>
+          </div>
+        </div>
+        <!-- RIGHT: what you need from IdP -->
+        <div>
+          <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+            color:var(--muted);margin-bottom:.65rem">What you need from {lbl}</div>
+          <div style="display:flex;flex-direction:column;gap:.45rem">
+            <div class="qs-need {'qs-ok' if cfg.get('client_id') else 'qs-miss'}">
+              <span class="qs-dot">{'&#x2713;' if cfg.get('client_id') else '&#x25CB;'}</span>
+              <span class="qs-field">Client ID</span>
+              {'<span class="qs-pill">Set</span>' if cfg.get('client_id') else '<span class="qs-pill qs-pill-miss">Missing</span>'}
+            </div>
+            <div class="qs-need {'qs-ok' if cfg.get('client_secret') else 'qs-miss'}">
+              <span class="qs-dot">{'&#x2713;' if cfg.get('client_secret') else '&#x25CB;'}</span>
+              <span class="qs-field">Client Secret</span>
+              {'<span class="qs-pill">Set</span>' if cfg.get('client_secret') else '<span class="qs-pill qs-pill-miss">Missing</span>'}
+            </div>
+            <div class="qs-need {'qs-ok' if (cfg.get('authorization_endpoint') or cfg.get('discovery_url')) else 'qs-miss'}">
+              <span class="qs-dot">{'&#x2713;' if (cfg.get('authorization_endpoint') or cfg.get('discovery_url')) else '&#x25CB;'}</span>
+              <span class="qs-field">Discovery URL <em>or</em> Endpoints</span>
+              {'<span class="qs-pill">Set</span>' if (cfg.get('authorization_endpoint') or cfg.get('discovery_url')) else '<span class="qs-pill qs-pill-miss">Missing</span>'}
+            </div>
+            <div class="qs-need qs-opt">
+              <span class="qs-dot" style="color:var(--accent)">&#x2605;</span>
+              <span class="qs-field">Use <strong>Discover</strong> button above to auto-fill all endpoints</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -5109,8 +5516,310 @@ def _wait_for_server(timeout=10):
             time.sleep(0.2)
     return False
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SERVICE MANAGEMENT  (Windows Task Scheduler / Linux systemd / macOS launchd)
+# ─────────────────────────────────────────────────────────────────────────────
+_SVC_TASK_NAME  = "SAMLTestBench"
+_SVC_UNIT_NAME  = "saml-testbench"
+_SVC_PLIST_NAME = "com.samltestbench.app"
+_SVC_DISPLAY    = "SAML TestBench"
+
+
+def _svc_exe() -> Path:
+    return Path(sys.executable).resolve()
+
+
+def _svc_status() -> dict:
+    plat = platform.system()
+    try:
+        if plat == "Windows":
+            r = subprocess.run(
+                ["schtasks", "/query", "/tn", _SVC_TASK_NAME, "/fo", "LIST"],
+                capture_output=True, text=True, timeout=8
+            )
+            installed = (r.returncode == 0)
+            running   = installed and "Running" in r.stdout
+            return {"installed": installed, "running": running,
+                    "platform": "windows", "detail": "Task Scheduler task"}
+
+        elif plat == "Linux":
+            for scope in [[], ["--user"]]:
+                r = subprocess.run(
+                    ["systemctl"] + scope + ["is-active", _SVC_UNIT_NAME],
+                    capture_output=True, text=True, timeout=5
+                )
+                if r.stdout.strip() == "active":
+                    label = "system" if not scope else "user (--user)"
+                    return {"installed": True, "running": True,
+                            "platform": "linux", "detail": label}
+            sys_f = Path("/etc/systemd/system/") / (_SVC_UNIT_NAME + ".service")
+            usr_f = Path.home() / ".config/systemd/user" / (_SVC_UNIT_NAME + ".service")
+            installed = sys_f.exists() or usr_f.exists()
+            return {"installed": installed, "running": False,
+                    "platform": "linux", "detail": "systemd unit (stopped)"}
+
+        elif plat == "Darwin":
+            plist = Path.home() / "Library/LaunchAgents" / (_SVC_PLIST_NAME + ".plist")
+            if not plist.exists():
+                return {"installed": False, "running": False,
+                        "platform": "darwin", "detail": "LaunchAgent not found"}
+            r = subprocess.run(["launchctl", "list", _SVC_PLIST_NAME],
+                               capture_output=True, text=True, timeout=5)
+            running = (r.returncode == 0) and "PID" in r.stdout
+            return {"installed": True, "running": running,
+                    "platform": "darwin", "detail": "LaunchAgent"}
+    except Exception:
+        pass
+    return {"installed": False, "running": False, "platform": plat.lower(), "detail": "unknown"}
+
+
+def _svc_install() -> str:
+    plat = platform.system()
+    exe  = _svc_exe()
+
+    if plat == "Windows":
+        r = subprocess.run(
+            ["schtasks", "/create", "/f",
+             "/tn", _SVC_TASK_NAME,
+             "/tr", '"{}"'.format(exe),
+             "/sc", "ONSTART",
+             "/ru", "SYSTEM", "/rl", "HIGHEST",
+             "/delay", "0000:30"],
+            capture_output=True, text=True, timeout=15
+        )
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr.strip() or r.stdout.strip())
+        lines = [
+            "Task Scheduler task '{}' created.".format(_SVC_TASK_NAME),
+            "SAML TestBench will start automatically at every system boot.",
+            "To start now:  schtasks /run /tn {}".format(_SVC_TASK_NAME),
+            "To check:      schtasks /query /tn {} /fo LIST".format(_SVC_TASK_NAME),
+        ]
+        return "\n".join(lines)
+
+    elif plat == "Linux":
+        unit_lines = [
+            "[Unit]",
+            "Description=" + _SVC_DISPLAY,
+            "Documentation=https://github.com/samltestbench",
+            "After=network-online.target",
+            "Wants=network-online.target",
+            "",
+            "[Service]",
+            "Type=simple",
+            "ExecStart=" + str(exe),
+            "Restart=always",
+            "RestartSec=10",
+            "WorkingDirectory=" + str(exe.parent),
+            "StandardOutput=journal",
+            "StandardError=journal",
+            "SyslogIdentifier=saml-testbench",
+            "",
+            "[Install]",
+            "WantedBy=multi-user.target",
+        ]
+        unit = "\n".join(unit_lines) + "\n"
+        sys_path = Path("/etc/systemd/system") / (_SVC_UNIT_NAME + ".service")
+        usr_path = Path.home() / ".config/systemd/user" / (_SVC_UNIT_NAME + ".service")
+        try:
+            sys_path.write_text(unit)
+            subprocess.run(["systemctl", "daemon-reload"], check=True, timeout=10)
+            subprocess.run(["systemctl", "enable", _SVC_UNIT_NAME], check=True, timeout=10)
+            lines = [
+                "systemd service '{}' installed system-wide.".format(_SVC_UNIT_NAME),
+                "To start now:  sudo systemctl start {}".format(_SVC_UNIT_NAME),
+                "Status:        sudo systemctl status {}".format(_SVC_UNIT_NAME),
+            ]
+            return "\n".join(lines)
+        except (PermissionError, subprocess.CalledProcessError):
+            usr_path.parent.mkdir(parents=True, exist_ok=True)
+            usr_path.write_text(unit)
+            subprocess.run(["systemctl", "--user", "daemon-reload"], timeout=10)
+            subprocess.run(["systemctl", "--user", "enable", _SVC_UNIT_NAME], timeout=10)
+            try:
+                import getpass as _gp
+                subprocess.run(["loginctl", "enable-linger", _gp.getuser()], timeout=5)
+            except Exception:
+                pass
+            lines = [
+                "User systemd service installed at:",
+                str(usr_path),
+                "To start now:  systemctl --user start {}".format(_SVC_UNIT_NAME),
+                "Status:        systemctl --user status {}".format(_SVC_UNIT_NAME),
+                "Note: 'loginctl enable-linger $USER' lets it survive logout.",
+            ]
+            return "\n".join(lines)
+
+    elif plat == "Darwin":
+        plist_lines = [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"',
+            '  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+            '<plist version="1.0">',
+            '<dict>',
+            '  <key>Label</key><string>{}</string>'.format(_SVC_PLIST_NAME),
+            '  <key>ProgramArguments</key>',
+            '  <array><string>{}</string></array>'.format(exe),
+            '  <key>RunAtLoad</key><true/>',
+            '  <key>KeepAlive</key><true/>',
+            '  <key>WorkingDirectory</key><string>{}</string>'.format(exe.parent),
+            '  <key>StandardOutPath</key><string>{}/saml_testbench.log</string>'.format(exe.parent),
+            '  <key>StandardErrorPath</key><string>{}/saml_testbench_err.log</string>'.format(exe.parent),
+            '</dict>',
+            '</plist>',
+        ]
+        agents = Path.home() / "Library/LaunchAgents"
+        agents.mkdir(parents=True, exist_ok=True)
+        plist_path = agents / (_SVC_PLIST_NAME + ".plist")
+        plist_path.write_text("\n".join(plist_lines) + "\n")
+        subprocess.run(["launchctl", "load", "-w", str(plist_path)], timeout=10)
+        lines = [
+            "LaunchAgent installed at:",
+            str(plist_path),
+            "SAML TestBench will start at login and restart if it crashes.",
+        ]
+        return "\n".join(lines)
+
+    raise NotImplementedError("Service install not supported on {}".format(plat))
+
+
+def _svc_uninstall() -> str:
+    plat = platform.system()
+    msgs = []
+    if plat == "Windows":
+        subprocess.run(["schtasks", "/end", "/tn", _SVC_TASK_NAME],
+                       capture_output=True, timeout=8)
+        r = subprocess.run(["schtasks", "/delete", "/f", "/tn", _SVC_TASK_NAME],
+                           capture_output=True, text=True, timeout=8)
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr.strip() or "Task not found.")
+        msgs.append("Task Scheduler task '{}' removed.".format(_SVC_TASK_NAME))
+    elif plat == "Linux":
+        for scope in [[], ["--user"]]:
+            subprocess.run(["systemctl"] + scope + ["stop",    _SVC_UNIT_NAME],
+                           capture_output=True, timeout=10)
+            subprocess.run(["systemctl"] + scope + ["disable", _SVC_UNIT_NAME],
+                           capture_output=True, timeout=10)
+        for p in [
+            Path("/etc/systemd/system") / (_SVC_UNIT_NAME + ".service"),
+            Path.home() / ".config/systemd/user" / (_SVC_UNIT_NAME + ".service"),
+        ]:
+            if p.exists():
+                try:
+                    p.unlink()
+                    msgs.append("Removed {}".format(p))
+                except PermissionError:
+                    msgs.append("Could not remove {} (try as root)".format(p))
+        subprocess.run(["systemctl",         "daemon-reload"], capture_output=True, timeout=10)
+        subprocess.run(["systemctl", "--user","daemon-reload"], capture_output=True, timeout=10)
+        if not msgs:
+            msgs.append("No service files found.")
+    elif plat == "Darwin":
+        plist_path = Path.home() / "Library/LaunchAgents" / (_SVC_PLIST_NAME + ".plist")
+        if plist_path.exists():
+            subprocess.run(["launchctl", "unload", "-w", str(plist_path)],
+                           capture_output=True, timeout=10)
+            plist_path.unlink()
+            msgs.append("LaunchAgent removed: {}".format(plist_path))
+        else:
+            msgs.append("No LaunchAgent found.")
+    else:
+        raise NotImplementedError("Service uninstall not supported on {}".format(plat))
+    return "\n".join(msgs)
+
+
+def _svc_start() -> str:
+    plat = platform.system()
+    if plat == "Windows":
+        r = subprocess.run(["schtasks", "/run", "/tn", _SVC_TASK_NAME],
+                           capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr.strip())
+        return "Task started."
+    elif plat == "Linux":
+        for scope in [[], ["--user"]]:
+            r = subprocess.run(["systemctl"] + scope + ["start", _SVC_UNIT_NAME],
+                               capture_output=True, timeout=10)
+            if r.returncode == 0:
+                return "Service started."
+        raise RuntimeError("Could not start service (try as root for system service).")
+    elif plat == "Darwin":
+        subprocess.run(["launchctl", "start", _SVC_PLIST_NAME], check=True, timeout=10)
+        return "LaunchAgent started."
+    raise NotImplementedError(platform.system())
+
+
+def _svc_stop() -> str:
+    plat = platform.system()
+    if plat == "Windows":
+        r = subprocess.run(["schtasks", "/end", "/tn", _SVC_TASK_NAME],
+                           capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr.strip())
+        return "Task ended."
+    elif plat == "Linux":
+        for scope in [[], ["--user"]]:
+            r = subprocess.run(["systemctl"] + scope + ["stop", _SVC_UNIT_NAME],
+                               capture_output=True, timeout=10)
+            if r.returncode == 0:
+                return "Service stopped."
+        raise RuntimeError("Could not stop service.")
+    elif plat == "Darwin":
+        subprocess.run(["launchctl", "stop", _SVC_PLIST_NAME], check=True, timeout=10)
+        return "LaunchAgent stopped."
+    raise NotImplementedError(platform.system())
+
+
+# ── Service API routes ────────────────────────────────────────────────────────
+@app.route("/admin/service/status")
+@admin_required
+def admin_svc_status():
+    return jsonify(_svc_status())
+
+@app.route("/admin/service/install", methods=["POST"])
+@admin_required
+def admin_svc_install():
+    try:
+        msg = _svc_install()
+        return jsonify({"ok": True,  "message": msg, "status": _svc_status()})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "status": _svc_status()})
+
+@app.route("/admin/service/uninstall", methods=["POST"])
+@admin_required
+def admin_svc_uninstall():
+    try:
+        msg = _svc_uninstall()
+        return jsonify({"ok": True,  "message": msg, "status": _svc_status()})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "status": _svc_status()})
+
+@app.route("/admin/service/start", methods=["POST"])
+@admin_required
+def admin_svc_start():
+    try:
+        msg = _svc_start()
+        return jsonify({"ok": True,  "message": msg, "status": _svc_status()})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "status": _svc_status()})
+
+@app.route("/admin/service/stop", methods=["POST"])
+@admin_required
+def admin_svc_stop():
+    try:
+        msg = _svc_stop()
+        return jsonify({"ok": True,  "message": msg, "status": _svc_status()})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "status": _svc_status()})
+
 def main():
+    global PORT
     init_db()
+    # Load port from DB (set via Admin → Settings, takes effect on restart)
+    _db_port = get_setting("port", "")
+    if _db_port and _db_port.isdigit() and 1024 <= int(_db_port) <= 65535:
+        PORT = int(_db_port)
 
     app.secret_key             = _user_secret()
     app.config["ADMIN_SECRET"] = _admin_secret()
@@ -5158,4 +5867,49 @@ def main():
         sys.exit(0)
 
 if __name__ == "__main__":
-    main()
+    ap = argparse.ArgumentParser(
+        prog="saml_testbench",
+        description="SAML TestBench — SAML/OIDC testing server",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  saml_testbench                    # start server, open browser\n"
+            "  saml_testbench --install-service  # register as auto-start service\n"
+            "  saml_testbench --uninstall-service\n"
+            "  saml_testbench --status\n"
+            "  saml_testbench --no-browser\n"
+            "  saml_testbench --port 8080\n"
+        )
+    )
+    ap.add_argument("--install-service",   action="store_true", help="Register as auto-start background service")
+    ap.add_argument("--uninstall-service", action="store_true", help="Remove background service registration")
+    ap.add_argument("--start-service",     action="store_true", help="Start the installed service")
+    ap.add_argument("--stop-service",      action="store_true", help="Stop the running service")
+    ap.add_argument("--status",            action="store_true", help="Print service status and exit")
+    ap.add_argument("--no-browser",        action="store_true", help="Start server without opening browser")
+    ap.add_argument("--port",              type=int, default=PORT, metavar="PORT", help="Port to listen on (default: 5000)")
+    args = ap.parse_args()
+
+    if args.port != PORT:
+        PORT = args.port
+
+    if args.install_service:
+        print(_svc_install()); sys.exit(0)
+    elif args.uninstall_service:
+        print(_svc_uninstall()); sys.exit(0)
+    elif args.start_service:
+        print(_svc_start()); sys.exit(0)
+    elif args.stop_service:
+        print(_svc_stop()); sys.exit(0)
+    elif args.status:
+        st = _svc_status()
+        print("Platform : {}".format(st["platform"]))
+        print("Installed: {}".format(st["installed"]))
+        print("Running  : {}".format(st["running"]))
+        print("Detail   : {}".format(st["detail"]))
+        sys.exit(0)
+    else:
+        if args.no_browser:
+            import webbrowser as _wb_mod
+            _wb_mod.open = lambda *a, **k: None
+        main()
